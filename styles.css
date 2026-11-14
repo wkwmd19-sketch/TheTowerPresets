@@ -427,3 +427,34 @@ button.perk-order-banned-chip:hover{background:#623030;border-color:#ed7373}
 :root[data-theme=light] .perk-order-banned-chip{background:#ffe0e0;border-color:#cd8d8d;color:#782626}
 :root[data-theme=light] .perk-order-banned-chip b{color:#902d2d}
 @media(max-width:650px){.perk-order-banned-list{grid-template-columns:1fr}}
+
+
+/* v1.1.16 — separate ranked and unranked perks into clearly distinct sections */
+.perk-order-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.perk-order-section-heading .field-label{margin:0}
+.perk-rank-fill{border:1px solid var(--line-strong);border-radius:5px;padding:9px 12px;font-size:11px;font-weight:800;background:var(--panel-2);color:var(--text);cursor:pointer}
+.perk-rank-fill:hover{border-color:var(--muted-2)}
+.perk-rank-help{margin:10px 0 14px;color:var(--muted-2);font-size:11px;line-height:1.7}
+.perk-order-ranked{border:1px solid var(--line);padding:12px;border-radius:8px;background:var(--panel-2)}
+.perk-order-ranked .perk-order-row{background:var(--panel);min-height:46px}
+.perk-rank-empty{color:var(--muted);font-size:12px;padding:17px;text-align:center}
+.perk-unranked-section{border:1px solid var(--line);padding:13px;border-radius:8px;margin-top:13px;background:var(--panel-2)}
+.perk-unranked-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.perk-unranked-header strong{font-size:12px;font-weight:850;color:var(--text)}
+.perk-unranked-header strong span{color:var(--muted-2)}
+.perk-unranked-header small{font-size:10px;color:var(--muted);line-height:1.5}
+.perk-unranked-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.perk-unranked-tile{display:flex;align-items:center;gap:8px;min-width:0;min-height:44px;border:1px solid var(--line-strong);background:var(--panel);border-radius:5px;padding:5px 6px}
+.perk-unranked-tile .drag-grip{font-size:14px;flex:0 0 15px}
+.perk-unranked-name{flex:1;min-width:0;font-size:10.5px;font-weight:730;line-height:1.5;overflow-wrap:anywhere}
+.perk-unranked-name.perk-standard{color:#a6cdf9}
+.perk-unranked-name.perk-ultimate{color:#9be3a7}
+.perk-unranked-name.perk-tradeoff{color:#d2a5ec}
+.perk-unranked-add{flex:0 0 28px;height:28px;border:1px solid var(--line-strong);background:var(--panel-2);border-radius:5px;color:var(--text);font-size:15px;font-weight:750;cursor:pointer}
+.perk-unranked-add:hover{border-color:var(--text);background:var(--panel-3)}
+.perk-unranked-tile.is-drag-over{outline:2px dashed #9cb7ed!important;outline-offset:-2px}
+:root[data-theme=light] .perk-unranked-name.perk-standard{color:#2d5c97}
+:root[data-theme=light] .perk-unranked-name.perk-ultimate{color:#246e33}
+:root[data-theme=light] .perk-unranked-name.perk-tradeoff{color:#784292}
+@media(max-width:1250px){.perk-unranked-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.perk-unranked-grid{grid-template-columns:1fr}.perk-order-ranked{padding:7px}.perk-order-actions{gap:3px}}

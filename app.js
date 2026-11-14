@@ -350,8 +350,9 @@ function normalizePerkRanking(p){
     ? Math.min(13,Math.max(0,p.perkRankCount))
     : Math.min(13,parsedPerkLines(p.fields?.perkOrder).length);
   const active=saved.filter(name=>!bannedSet.has(name));
-  const stillRanked=saved.slice(0,previousCount).filter(name=>!bannedSet.has(name));
-  p.perkRankCount=Math.min(13,stillRanked.length);
+  // A banned ranked perk vacates its place; the next eligible perk fills it.
+  // Preserve a deliberately partial ranking (for example, 3/13).
+  p.perkRankCount=Math.min(13,active.length,previousCount);
   p.fields.perkOrder=[...active,...banned].map((name,i)=>`${String(i+1).padStart(2,'0')}. ${name}`).join('\n');
 }
 for(const preset of presets)normalizePerkRanking(preset);
@@ -521,9 +522,12 @@ function togglePerkBan(name){
   const index=selected.indexOf(name);
   if(index>=0)selected.splice(index,1);
   else {if(selected.length>=8){toast('금지 특전은 최대 8개까지만 선택할 수 있습니다.');return;}selected.push(name);}
+  const slots=rankCount();
   writeBans(selected);
-  // A newly banned ranked perk forfeits its rank; unbanning only makes it available.
-  normalizePerkRanking(current());
+  // Keep the user's rank-slot count. If a ranked perk is banned, the next
+  // eligible unranked perk fills that place instead of shrinking 13 to 12.
+  // Unbanning returns the item to the unranked pool without auto-promoting it.
+  writePerkOrder(availablePerkOrder(current().fields.perkOrder),slots);
   persist();renderDetails();
 }
 function writePerkOrder(names,count=rankCount()){
@@ -555,6 +559,11 @@ function addPerk(name){
   available.splice(index,1);available.splice(count>=13?12:count,0,name);
   writePerkOrder(available,Math.min(13,count+1));persist();renderDetails();
 }
+function fillPerkRanks(){
+  const available=availablePerkOrder(current().fields.perkOrder);
+  writePerkOrder(available,Math.min(13,available.length));
+  persist();renderDetails();
+}
 function renderPerkBans(value,editable){
   const selected=banNames(value),full=selected.length>=8;
   const badge=name=>editable?`<button type="button" class="perk-chip perk-${perkType(name)} perk-remove-chip" data-perk-ban="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 금지 해제">${escapeHtml(name)} <b class="chip-remove">×</b></button>`:perkChip(name);
@@ -563,7 +572,7 @@ function renderPerkBans(value,editable){
 function renderPerkOrder(value,editable){
   const available=availablePerkOrder(value),banned=banNames(current().fields.perks);
   const count=Math.min(rankCount(),available.length),unranked=available.slice(count);
-  // Banned perks stay visible at the bottom but have no rank, drag handle or promote button.
+  // Visible in read-only and edit mode, but never sortable or ranked.
   const bannedSection=banned.length?`<div class="perk-order-banned" aria-label="순위 제외된 금지 특전">
     <div class="perk-order-banned-title">🔒 금지 특전 · 순위 제외 (${banned.length})</div>
     <div class="perk-order-banned-list">${banned.map(name=>editable?
@@ -571,11 +580,26 @@ function renderPerkOrder(value,editable){
       `<span class="perk-order-banned-chip"><span>금지</span>${escapeHtml(name)}</span>`).join('')}</div>
   </div>`:'';
   if(!editable)return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${count}/13) · 미지정 ${unranked.length}개</span><div class="perk-grid">${available.slice(0,count).map((name,i)=>`<span class="perk-chip perk-${perkType(name)}"><b>#${i+1}</b> ${escapeHtml(name)}</span>`).join('')}</div>${unranked.length?`<details class="perk-order-details"><summary>순위 미지정 특전 ${unranked.length}개 펼치기</summary><div class="perk-grid perk-grid-extra">${unranked.map(name=>`<span class="perk-chip perk-unranked perk-${perkType(name)}">${escapeHtml(name)}</span>`).join('')}</div></details>`:''}${bannedSection}</div>`;
-  return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${count}/13) · 드래그로 순서 변경 · 금지 특전은 맨 아래로 분리</span>
-    <div class="perk-order-editor" role="list" aria-label="특전 자동 선택 순서">${available.map((name,i)=>`<div class="perk-order-row ${i>=count?'perk-order-unranked':''} can-drag" draggable="true" data-drag-sort="perk" data-drag-index="${i}" role="listitem" title="드래그하여 순서 변경">
-      <span class="drag-grip" aria-hidden="true">⠿</span><span class="perk-order-rank">${i<count?String(i+1).padStart(2,'0'):'—'}</span>${perkChip(name)}
-      <span class="perk-order-actions"><button type="button" data-perk-move="${i}" data-direction="-1" ${i===0?'disabled':''} aria-label="${escapeHtml(name)} 위로">↑</button><button type="button" data-perk-move="${i}" data-direction="1" ${i===available.length-1?'disabled':''} aria-label="${escapeHtml(name)} 아래로">↓</button>${i<count?`<button type="button" data-perk-remove="${i}" aria-label="${escapeHtml(name)} 순위 제외">×</button>`:`<button type="button" data-perk-promote="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 13위 안에 편입">＋</button>`}</span>
-    </div>`).join('')}</div>${bannedSection}</div>`;
+  const ranked=available.slice(0,count);
+  return `<div class="setting-field perks-field">
+    <div class="perk-order-section-heading"><span class="field-label">자동선택 우선순위 (${count}/13)</span>${count<13?'<button type="button" class="perk-rank-fill" data-perk-fill aria-label="13위까지 자동 선택 우선순위 채우기">＋ 13위까지 채우기</button>':''}</div>
+    <p class="perk-rank-help">위아래 버튼이나 드래그로 순서를 바꿀 수 있어. 미지정 특전을 위로 끌어오거나 + 버튼으로 추가할 수 있어.</p>
+    <div class="perk-order-editor perk-order-ranked" role="list" aria-label="1~13위 자동 선택 특전">
+      ${ranked.map((name,i)=>`<div class="perk-order-row can-drag" draggable="true" data-drag-sort="perk" data-drag-index="${i}" role="listitem" title="드래그하여 순서 변경">
+        <span class="drag-grip" aria-hidden="true">⠿</span><span class="perk-order-rank">${String(i+1).padStart(2,'0')}</span>${perkChip(name)}
+        <span class="perk-order-actions"><button type="button" data-perk-move="${i}" data-direction="-1" ${i===0?'disabled':''} aria-label="${escapeHtml(name)} 위로">↑</button><button type="button" data-perk-move="${i}" data-direction="1" ${i===available.length-1?'disabled':''} aria-label="${escapeHtml(name)} 아래로">↓</button><button type="button" data-perk-remove="${i}" aria-label="${escapeHtml(name)} 순위 제외">×</button></span>
+      </div>`).join('')}
+      ${ranked.length===0?'<div class="perk-rank-empty">지정된 특전이 없어. 아래에서 특전을 추가해 줘.</div>':''}
+    </div>
+    <section class="perk-unranked-section" aria-label="순위 미지정 특전">
+      <div class="perk-unranked-header"><strong>미지정 특전 <span>${unranked.length}개</span></strong><small>+ 를 눌러 순위에 추가하거나 카드를 드래그</small></div>
+      <div class="perk-unranked-grid" role="list" aria-label="순위 미지정 특전 선택">
+        ${unranked.map((name,j)=>`<div class="perk-unranked-tile can-drag" draggable="true" data-drag-sort="perk" data-drag-index="${count+j}" role="listitem" title="끌어서 위 순위로 이동">
+          <span class="drag-grip" aria-hidden="true">⠿</span><span class="perk-unranked-name perk-${perkType(name)}">${escapeHtml(name)}</span>
+          <button type="button" data-perk-promote="${escapeHtml(name)}" class="perk-unranked-add" aria-label="${escapeHtml(name)} 순위에 추가">＋</button>
+        </div>`).join('')}
+      </div>
+    </section>${bannedSection}</div>`;
 }
 
 /* Equipment catalogs are grouped by reliably identified slot types. Existing custom names stay selectable. */
@@ -1052,7 +1076,7 @@ function openHistory() {
   });
   $('settingGroups').addEventListener('click', event => {
     if (!editable) return;
-    const btn=event.target.closest('button[data-level-field],button[data-level-lock],button[data-bot-plus],button[data-bot-toggle],button[data-bot-stat],button[data-target-move],button[data-perk-ban],button[data-perk-move],button[data-perk-remove],button[data-perk-add],button[data-perk-promote],button[data-card-toggle],button[data-card-mastery]');
+    const btn=event.target.closest('button[data-level-field],button[data-level-lock],button[data-bot-plus],button[data-bot-toggle],button[data-bot-stat],button[data-target-move],button[data-perk-ban],button[data-perk-move],button[data-perk-remove],button[data-perk-add],button[data-perk-promote],button[data-perk-fill],button[data-card-toggle],button[data-card-mastery]');
     if (!btn) return;
     if (btn.hasAttribute('data-level-lock')) {
       toggleLevelLock(btn.dataset.levelLock,btn.dataset.statName);
@@ -1078,6 +1102,8 @@ function openHistory() {
       removePerk(Number(btn.dataset.perkRemove));
     } else if (btn.hasAttribute('data-perk-promote')) {
       addPerk(btn.dataset.perkPromote);
+    } else if (btn.hasAttribute('data-perk-fill')) {
+      fillPerkRanks();
     } else if (btn.hasAttribute('data-perk-add')) {
       const select=$('perkAddSelect');if(select?.value)addPerk(select.value);
     }
