@@ -1,4 +1,4 @@
-/* The Tower Idle labels with MAX research perk values, v1.1.13.
+/* The Tower Idle labels with MAX research perk values, v1.1.14.
  * Perk indices: TheTowerSDK catalog; research MAX: standard +25%, trade-off +10%, in-game screenshot for boss 77%.
  * Guardian ChipType enum: TheTowerSDK src/data/player-stats/fields.data.ts.
  * Module shorthand: user's own Korean terminology / confirmed glossary.

@@ -408,3 +408,6 @@
 :root[data-theme=light] .perk-choice:disabled{background:#e5e5e5!important;color:#a0a0a0!important}
 /* Keep every unranked perk visibly reachable; browser page scrolling allows longer drag paths. */
 .perk-order-editor{max-height:none;overflow:visible}
+
+/* v1.1.14 — warn about old selections in a wrong module slot without deleting them. */
+.module-legacy-warning{margin:10px 0 0;font-size:11px;line-height:1.65;color:var(--muted);border-left:2px solid var(--muted);padding:4px 10px}

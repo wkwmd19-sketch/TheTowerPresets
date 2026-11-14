@@ -544,11 +544,13 @@ function renderPerkOrder(value,editable){
 }
 
 /* Equipment catalogs are grouped by reliably identified slot types. Existing custom names stay selectable. */
+// Matched against the game's module catalog: Cannon / Armor / Generator / Core.
+// Use the player's preferred Korean shorthand when showing selectable items.
 const MODULE_OPTIONS={
-  slot1:['혼란 도래자','사형선고','절멸자','아스트랄','증폭일격','황저','전술 탄막'],
-  slot2:['웜홀 재지향기','음질프','공변기','큐방포','안와','프젝자','회복 보너스','날용','감프'],
-  slot3:['블소','펄서','갤압','하네스','임계값'],
-  slot4:['멀티버스 넥서스','차코','하모니 도체','옴칩','원붕']
+  slot1:['혼란 도래자','사형선고','절멸자','아스트랄','증폭일격','황저','축소광선'],
+  slot2:['웜홀 재지향기','음질프','공변기','큐방포','안와','날용','감프'],
+  slot3:['블소','펄서','갤압','하네스','임계값','프젝자','회복 보너스'],
+  slot4:['멀티버스 넥서스','차코','하모니 도체','옴칩','원붕','전술 탄막','자석후크']
 };
 // Each module selector is restricted to the correct equipment category.
 const GUARDIAN_OPTIONS=['현상금','공격','동맹','회수','소환','정찰'];
@@ -575,8 +577,12 @@ function moduleOptions(slot,chosen){
 }
 function renderModules(key,label,value,editable){
   const parts=moduleParts(value);
+  // Old site versions allowed wrong-slot selections. Keep the stored names intact
+  // until manually changed, but never offer them as a selectable module for that slot.
+  const invalid=parts.filter(name=>!MODULE_OPTIONS[key]?.includes(name));
+  const notice=invalid.length?`<p class="module-legacy-warning">이전 설정의 ${invalid.map(escapeHtml).join(' · ')} 모듈은 이 부위에 속하지 않습니다. 올바른 부위에서 다시 장착해 주세요. 기존 값은 자동 삭제하지 않습니다.</p>`:'';
   return `<div class="setting-field equipment-field"><div class="equip-heading"><strong>${escapeHtml(label)} 모듈</strong></div>
-  ${editable?`<div class="equip-edit-row"><label>주 모듈<select data-module-slot="${key}" data-module-pos="0">${moduleOptions(key,parts[0]||'')}</select></label><label>보조 모듈<select data-module-slot="${key}" data-module-pos="1">${moduleOptions(key,parts[1]||'')}</select></label></div>`:`<div class="equip-display">${parts.length?parts.map(name=>`<span class="equip-pill">${escapeHtml(name)}</span>`).join('<span class="equip-separator">+</span>'):'<span class="muted-caption">미장착</span>'}</div>`}</div>`;
+  ${editable?`<div class="equip-edit-row"><label>주 모듈<select data-module-slot="${key}" data-module-pos="0">${moduleOptions(key,parts[0]||'')}</select></label><label>보조 모듈<select data-module-slot="${key}" data-module-pos="1">${moduleOptions(key,parts[1]||'')}</select></label></div>`:`<div class="equip-display">${parts.length?parts.map(name=>`<span class="equip-pill">${escapeHtml(name)}</span>`).join('<span class="equip-separator">+</span>'):'<span class="muted-caption">미장착</span>'}</div>`}${notice}</div>`;
 }
 function guardianNames(value){return compactGuardian(value).split(/\s*\|\s*/).map(x=>x.trim()).filter(Boolean).slice(0,2);}
 function equipGuardian(slot,value){
