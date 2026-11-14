@@ -1,12 +1,12 @@
 /* 기본 설정 데이터: 확인된 사용자 기록만 입력하고, 확인되지 않은 항목은 비워 둡니다. */
-window.TOWER_SCHEMA_VERSION = 11;
+window.TOWER_SCHEMA_VERSION = 12;
 window.TOWER_GROUPS = [
   { id:'strategy', number:'01', title:'운영방향', columns:1, fields:[['strategy','운영 방향']] },
   { id:'workshop', number:'02', title:'작업장', columns:1, fields:[['attack','공격 업그레이드'],['defense','방어 업그레이드'],['utility','유틸리티 업그레이드'],['extras','작업장 강화']] },
   { id:'laboratory', number:'03', title:'연구실', columns:2, fields:[['labShockwave','충격파 크기'],['labRange','범위']] },
   { id:'cards', number:'04', title:'카드', columns:1, fields:[['cards','카드 구성']] },
   { id:'bots', number:'05', title:'봇', columns:1, fields:[['bot1','활성 봇']] },
-  { id:'modules', number:'06', title:'모듈', columns:2, fields:[['slot1','공격'],['slot2','방어'],['slot3','발전기'],['slot4','코어']] },
+  { id:'modules', number:'06', title:'모듈', columns:2, fields:[['slot1','공격'],['slot3','발전기'],['slot2','방어'],['slot4','코어']] },
   { id:'guardian', number:'07', title:'가디언', columns:1, fields:[['guardian','가디언 설정']] },
   { id:'targeting', number:'08', title:'적 우선순위', columns:1, fields:[['priority','우선순위']] },
   { id:'perks', number:'09', title:'특전', columns:1, fields:[['perks','특전 설정'],['perkOrder','자동 특전 우선순위']] }

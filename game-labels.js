@@ -1,11 +1,47 @@
-/* The Tower Idle local labels, v1.1.2.
- * Perk indices: TheTowerSDK src/save/catalogs/perks.ts (verified 2026-11-13).
+/* The Tower Idle labels with MAX research perk values, v1.1.13.
+ * Perk indices: TheTowerSDK catalog; research MAX: standard +25%, trade-off +10%, in-game screenshot for boss 77%.
  * Guardian ChipType enum: TheTowerSDK src/data/player-stats/fields.data.ts.
  * Module shorthand: user's own Korean terminology / confirmed glossary.
  * The index remains the source of truth; unknown future IDs are not guessed.
  */
 window.TOWER_NAME_MAPS = Object.freeze({
   perks: Object.freeze({
+    0:'최대 체력 1.50배',
+    1:'대미지 1.44배',
+    2:'체력 재생 2.19배',
+    3:'모든 코인 보너스 1.44배',
+    4:'바운스샷 표적 +2',
+    5:'이익 1.88배',
+    6:'지뢰 대미지 4.375배',
+    7:'오브 +1',
+    8:'모든 무료 업그레이드 확률 +6.25%',
+    9:'방어율 +5.00%',
+    10:'특전 선택 요구 웨이브 −25%',
+    11:'무작위 궁무 해금',
+    12:'최대 게임 속도 +1.25',
+    13:'캐시 보너스 1.44배',
+    14:'절대 방어 1.44배',
+    20:'스마트 미사일 +4발',
+    21:'독 늪 반경 1.50배',
+    22:'죽음의 파동 +1회',
+    23:'내부 지뢰 추가 세트',
+    24:'황금 타워 보너스 1.50배',
+    25:'연쇄 번개 대미지 2배',
+    26:'시간장 지속 +5초',
+    27:'블랙홀 지속 +12초',
+    28:'스폿 대미지 보너스 1.50배',
+    40:'타워 대미지 1.65배 / 보스 체력 8배',
+    41:'코인 1.98배 / 타워 최대 체력 −70%',
+    42:'적 체력 −55% / 체력 재생·피흡 −90%',
+    43:'적 대미지 −55% / 타워 대미지 −50%',
+    44:'원거리 적 공격거리 감소 / 원거리 적 대미지 3배',
+    45:'적 이동속도 −44% / 적 대미지 2.50배',
+    46:'웨이브당 캐시 13.2배 / 처치 캐시 없음',
+    47:'체력 재생 8.80배 / 최대 체력 −60%',
+    48:'보스 체력 −77% / 보스 이동속도 +50%',
+    49:'피흡 2.75배 / 넉백 힘 −70%'
+  }),
+  legacyPerks: Object.freeze({
     0:'최대 체력 1.20배',
     1:'대미지 1.15배',
     2:'체력 재생 1.75배',
@@ -56,7 +92,7 @@ window.TOWER_NAME_MAPS = Object.freeze({
   }),
   targets: Object.freeze({
     0:'가장 가까운 적', 1:'일반', 2:'신속', 3:'탱크', 4:'원거리',
-    5:'보스', 6:'스포트라이트', 7:'프로텍터', 8:'엘리트', 9:'플릿'
+    5:'보스', 6:'스포트라이드 범위 내', 7:'수호자', 8:'엘리트', 9:'플릿'
   }),
   ultimateWeapons: Object.freeze([
     '연쇄 번개', '스마트 미사일', '죽음의 파동', '시간장',

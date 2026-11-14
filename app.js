@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const STORAGE_KEY = 'the-tower-idle-preset-archive:v3'; // Keep browser settings from v1.1.1.
-  const SCHEMA_VERSION = 11;
+  const SCHEMA_VERSION = 12;
   const THEME_KEY = 'the-tower-idle-preset-theme:v1';
   const INITIAL = window.TOWER_INITIAL_SNAPSHOT;
   const DEFAULTS = window.TOWER_DEFAULT_PRESETS.map(base => {
@@ -9,7 +9,7 @@
     return extracted ? {...base, botStats: JSON.parse(JSON.stringify(extracted.botStats || {})), workshopLocks:{}, fields: {...Object.fromEntries(Object.keys(base.fields).map(key => [key, ''])), ...Object.fromEntries(Object.entries(extracted.fields).filter(([key]) => key !== 'notes'))}} : {...base, workshopLocks:{}};
   });
   for (const base of DEFAULTS) {
-    if (typeof base.fields.perkOrder === 'string') base.fields.perkOrder = base.fields.perkOrder.split('\n').filter(Boolean).slice(0,13).join('\n');
+    if (typeof base.fields.perkOrder === 'string') base.fields.perkOrder = base.fields.perkOrder.split('\n').filter(Boolean).join('\n');
   }
   // The new tournament preset starts as a deep copy of Push_Trn_DS, but is never linked to it.
   // Existing browser data and imported backups with only five presets are handled in normalize().
@@ -78,8 +78,9 @@
       if (found.customSourceValues && typeof found.customSourceValues === 'object' && !Array.isArray(found.customSourceValues)) {
         next.customSourceValues = clone(found.customSourceValues);
       }
+      next.perkRankCount = Number.isInteger(found.perkRankCount) ? Math.min(13,Math.max(0,found.perkRankCount)) : Math.min(13,String(found.fields?.perkOrder||'').split('\n').filter(Boolean).length);
       next.fields.guardian = compactGuardian(next.fields.guardian || '');
-      next.fields.perkOrder = String(next.fields.perkOrder || '').split('\n').filter(Boolean).slice(0,13).join('\n');
+      next.fields.perkOrder = String(next.fields.perkOrder || '').split('\n').filter(Boolean).join('\n');
       next.workshopLocks = {};
       if (found.workshopLocks && typeof found.workshopLocks === 'object' && !Array.isArray(found.workshopLocks)) {
         for (const [name, locked] of Object.entries(found.workshopLocks)) {
@@ -333,6 +334,9 @@ const WORKSHOP_ENHANCEMENT = [
 ];
 const PERK_MAP=window.TOWER_NAME_MAPS?.perks || {};
 const perkNames=Object.values(PERK_MAP);
+const LEGACY_PERK_MAP=window.TOWER_NAME_MAPS?.legacyPerks || {};
+const perkAliases=new Map(Object.entries(LEGACY_PERK_MAP).map(([id,name])=>[name,PERK_MAP[id]||name]));
+function canonicalPerkName(name){return perkAliases.get(String(name).trim()) || String(name).trim();}
 const perkType=name=>{const k=Object.keys(PERK_MAP).find(id=>PERK_MAP[id]===name);return k==null?'unknown':Number(k)>=40?'tradeoff':Number(k)>=20?'ultimate':'standard';};
 const perkChip=(name)=>`<span class="perk-chip perk-${perkType(name)}">${escapeHtml(name)}</span>`;
 function parseWorkshop(value) {
@@ -449,48 +453,94 @@ function renderBots(editable){
     }).join('')}</div>`:`<p class="field-empty">활성 봇 없음</p>`}
   </div>`;
 }
-const targetIconClasses={'신속':'fast','원거리':'ranged','플릿':'fleet','엘리트':'elite','보스':'boss','프로텍터':'protector','가장 가까운 적':'closest','스포트라이트':'spotlight','탱크':'tank','일반':'basic'};
-function targetsFrom(value){return String(value||'').split('→').map(x=>x.trim()).filter(Boolean);}
+const targetIconClasses={'수호자':'protector','스포트라이드 범위 내':'spotlight','신속':'fast','원거리':'ranged','플릿':'fleet','엘리트':'elite','보스':'boss','프로텍터':'protector','가장 가까운 적':'closest','스포트라이트':'spotlight','탱크':'tank','일반':'basic'};
+const targetAliases={'프로텍터':'수호자','스포트라이트':'스포트라이드 범위 내','스포트라이트 범위 내':'스포트라이드 범위 내'};
+function targetsFrom(value){return String(value||'').split('→').map(x=>targetAliases[x.trim()]||x.trim()).filter(Boolean);}
 function moveTarget(index,dir){
   const names=targetsFrom(current().fields.priority);const next=index+dir;
   if(next<0||next>=names.length)return;
   [names[index],names[next]]=[names[next],names[index]];
   current().fields.priority=names.join(' → ');persist();renderDetails();
 }
+function reorderTarget(from,to){
+  const names=targetsFrom(current().fields.priority);
+  if(from<0||from>=names.length||to<0||to>=names.length||from===to)return;
+  const [moved]=names.splice(from,1);names.splice(to,0,moved);
+  current().fields.priority=names.join(' → ');persist();renderDetails();
+}
 function renderTargets(value,editable){
   const names=targetsFrom(value);
-  if(!names.length)return '<div class="field-value field-empty"></div>';
-  return `<div class="target-list">${names.map((name,i)=>`<div class="target-row ${i>=7?'target-disabled':''}"><span class="target-left"><i class="target-icon ${targetIconClasses[name]||'basic'}"></i>${escapeHtml(name)}</span><span class="target-row-actions"><span class="target-rank">${i<7?i+1:'–'}</span>${editable?`<button type="button" data-target-move="${i}" data-direction="-1" ${i===0?'disabled':''} aria-label="${escapeHtml(name)} 위로 이동">↑</button><button type="button" data-target-move="${i}" data-direction="1" ${i===names.length-1?'disabled':''} aria-label="${escapeHtml(name)} 아래로 이동">↓</button>`:''}</span></div>`).join('')}</div>`;
+  if(!names.length)return '<div class="field-value field-empty">대상 없음</div>';
+  return `<div class="target-list">${names.map((name,i)=>`<div class="target-row ${i>=7?'target-disabled':''} ${editable?'can-drag':''}" ${editable?`draggable="true" data-drag-sort="target" data-drag-index="${i}" title="끌어서 우선순위 변경"`:''}>
+    <span class="target-left">${editable?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<i class="target-icon ${targetIconClasses[name]||'basic'}"></i>${escapeHtml(name)}</span>
+    <span class="target-row-actions"><span class="target-rank">${i<7?i+1:'–'}</span>${editable?`<button type="button" data-target-move="${i}" data-direction="-1" ${i===0?'disabled':''} aria-label="${escapeHtml(name)} 위로 이동">↑</button><button type="button" data-target-move="${i}" data-direction="1" ${i===names.length-1?'disabled':''} aria-label="${escapeHtml(name)} 아래로 이동">↓</button>`:''}</span>
+  </div>`).join('')}</div>`;
 }
 function banNames(value){
-  const all=[...String(value||'').matchAll(/^•\s*(.+)$/gm)].map(x=>x[1].trim());
-  if(all.length)return [...new Set(all)];
+  const all=[...String(value||'').matchAll(/^•\s*(.+)$/gm)].map(x=>canonicalPerkName(x[1]));
+  if(all.length)return [...new Set(all)].filter(n=>perkNames.includes(n)).slice(0,8);
   const old=String(value||'').match(/금지 특전[^\n]*?#[^\n]+/)?.[0]||'';
-  return [...new Set((old.match(/#\d+/g)||[]).map(id=>PERK_MAP[id.slice(1)]).filter(Boolean))];
+  return [...new Set((old.match(/#\d+/g)||[]).map(id=>PERK_MAP[id.slice(1)]).filter(Boolean))].slice(0,8);
 }
-function perkOrderNames(value){return [...new Set(String(value||'').split('\n').map(s=>s.trim().replace(/^\d+[.．]\s*/, '')).filter(Boolean))].slice(0,13);}
+function parsedPerkLines(value){return [...new Set(String(value||'').split('\n').map(s=>canonicalPerkName(s.trim().replace(/^\d+[.．]\s*/, ''))).filter(n=>perkNames.includes(n)))];}
+function fullPerkOrder(value){
+  const saved=parsedPerkLines(value);
+  return [...saved,...perkNames.filter(name=>!saved.includes(name))];
+}
+function rankCount(){
+  const value=current().perkRankCount;
+  if(Number.isInteger(value))return Math.min(13,Math.max(0,value));
+  return Math.min(13,parsedPerkLines(current().fields.perkOrder).length);
+}
+function perkOrderNames(value){return fullPerkOrder(value).slice(0,rankCount());}
 function writeBans(names){current().fields.perks=`금지 특전 (${names.length}개):\n`+names.map(name=>'• '+name).join('\n');}
 function togglePerkBan(name){
   if(!perkNames.includes(name))return;
   const selected=banNames(current().fields.perks);
   const index=selected.indexOf(name);
   if(index>=0)selected.splice(index,1);
-  else {if(selected.length>=8){toast('금지 특전은 현재 설정 기준 최대 8개까지만 선택할 수 있습니다.');return;}selected.push(name);}
+  else {if(selected.length>=8){toast('금지 특전은 최대 8개까지만 선택할 수 있습니다.');return;}selected.push(name);}
   writeBans(selected);persist();renderDetails();
 }
-function writePerkOrder(names){current().fields.perkOrder=names.map((name,i)=>`${String(i+1).padStart(2,'0')}. ${name}`).join('\n');}
-function movePerk(index,dir){const names=perkOrderNames(current().fields.perkOrder),next=index+dir;if(next<0||next>=names.length)return;[names[index],names[next]]=[names[next],names[index]];writePerkOrder(names);persist();renderDetails();}
-function removePerk(index){const names=perkOrderNames(current().fields.perkOrder);if(index<0||index>=names.length)return;names.splice(index,1);writePerkOrder(names);persist();renderDetails();}
-function addPerk(name){if(!perkNames.includes(name))return;const names=perkOrderNames(current().fields.perkOrder);if(names.includes(name))return;if(names.length>=13){toast('자동 선택 우선순위는 최대 13개까지만 선택할 수 있습니다.');return;}names.push(name);writePerkOrder(names);persist();renderDetails();}
+function writePerkOrder(names,count=rankCount()){
+  const ordered=[...new Set(names)].filter(name=>perkNames.includes(name));
+  for(const name of perkNames)if(!ordered.includes(name))ordered.push(name);
+  current().perkRankCount=Math.min(13,Math.max(0,count));
+  current().fields.perkOrder=ordered.map((name,i)=>`${String(i+1).padStart(2,'0')}. ${name}`).join('\n');
+}
+function reorderPerk(from,to){
+  const full=fullPerkOrder(current().fields.perkOrder);
+  if(from<0||from>=full.length||to<0||to>=full.length||from===to)return;
+  const [moved]=full.splice(from,1);full.splice(to,0,moved);
+  writePerkOrder(full);persist();renderDetails();
+}
+function movePerk(index,dir){reorderPerk(index,index+dir);}
+function removePerk(index){
+  const full=fullPerkOrder(current().fields.perkOrder),count=rankCount();
+  if(index<0||index>=count)return;
+  const [removed]=full.splice(index,1);full.push(removed);
+  writePerkOrder(full,count-1);persist();renderDetails();
+}
+function addPerk(name){
+  const full=fullPerkOrder(current().fields.perkOrder),count=rankCount();
+  if(!perkNames.includes(name))return;
+  const index=full.indexOf(name);if(index<0)return;
+  full.splice(index,1);full.splice(count>=13?12:count,0,name);
+  writePerkOrder(full,Math.min(13,count+1));persist();renderDetails();
+}
 function renderPerkBans(value,editable){
-  const selected=banNames(value);
-  return `<div class="setting-field perks-field"><span class="field-label">금지 특전 (${selected.length}/8)</span><div class="perk-grid">${selected.map(perkChip).join('')}</div>${editable?`<details class="perk-edit-details" open><summary>금지 특전 선택 · 클릭하여 추가/해제</summary><div class="perk-toggle-grid">${perkNames.map(name=>`<button type="button" class="perk-choice perk-${perkType(name)} ${selected.includes(name)?'selected':''}" data-perk-ban="${escapeHtml(name)}" aria-pressed="${selected.includes(name)}"><span class="perk-check">${selected.includes(name)?'✓':'+'}</span>${escapeHtml(name)}</button>`).join('')}</div></details>`:''}</div>`;
+  const selected=banNames(value),full=selected.length>=8;
+  const badge=name=>editable?`<button type="button" class="perk-chip perk-${perkType(name)} perk-remove-chip" data-perk-ban="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 금지 해제">${escapeHtml(name)} <b class="chip-remove">×</b></button>`:perkChip(name);
+  return `<div class="setting-field perks-field"><span class="field-label">금지 특전 (${selected.length}/8)${editable&&full?' · 8개 선택 완료':''}</span><div class="perk-grid">${selected.map(badge).join('')}</div>${editable?`<details class="perk-edit-details" open><summary>금지 특전 선택 · 선택된 항목을 다시 누르면 해제</summary><div class="perk-toggle-grid">${perkNames.map(name=>{const chosen=selected.includes(name);return `<button type="button" class="perk-choice perk-${perkType(name)} ${chosen?'selected':''}" data-perk-ban="${escapeHtml(name)}" aria-pressed="${chosen}" ${full&&!chosen?'disabled title="8개 모두 지정됨 — 선택된 항목을 해제하세요"':''}><span class="perk-check">${chosen?'✓':'+'}</span>${escapeHtml(name)}</button>`}).join('')}</div></details>`:''}</div>`;
 }
 function renderPerkOrder(value,editable){
-  const items=perkOrderNames(value);
-  if(!editable){const shown=items.slice(0,13);return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${items.length})</span><div class="perk-grid">${shown.map((name,i)=>`<span class="perk-chip perk-${perkType(name)}"><b>#${i+1}</b> ${escapeHtml(name)}</span>`).join('')}</div>${items.length>13?`<details class="perk-order-details"><summary>나머지 ${items.length-13}개 항목 펼치기</summary><div class="perk-grid perk-grid-extra">${items.slice(13).map((name,i)=>`<span class="perk-chip perk-${perkType(name)}"><b>#${i+14}</b> ${escapeHtml(name)}</span>`).join('')}</div></details>`:''}</div>`;}
-  const remaining=perkNames.filter(n=>!items.includes(n));
-  return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${items.length}/13) · 화살표로 순서 변경</span><div class="perk-order-editor">${items.map((name,i)=>`<div class="perk-order-row"><span class="perk-order-rank">${String(i+1).padStart(2,'0')}</span>${perkChip(name)}<span class="perk-order-actions"><button type="button" data-perk-move="${i}" data-direction="-1" ${i===0?'disabled':''} aria-label="${escapeHtml(name)} 위로">↑</button><button type="button" data-perk-move="${i}" data-direction="1" ${i===items.length-1?'disabled':''} aria-label="${escapeHtml(name)} 아래로">↓</button><button type="button" data-perk-remove="${i}" aria-label="${escapeHtml(name)} 목록에서 제외">×</button></span></div>`).join('')}</div>${remaining.length && items.length < 13?`<div class="perk-add-row"><select id="perkAddSelect" aria-label="자동 선택에 넣을 특전">${remaining.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}</select><button type="button" class="button button-outline" data-perk-add>순서 끝에 추가</button></div>`:''}</div>`;
+  const full=fullPerkOrder(value),count=rankCount();
+  if(!editable)return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${count}/13) · 미지정 ${full.length-count}개</span><div class="perk-grid">${full.slice(0,count).map((name,i)=>`<span class="perk-chip perk-${perkType(name)}"><b>#${i+1}</b> ${escapeHtml(name)}</span>`).join('')}</div><details class="perk-order-details"><summary>순위 미지정 특전 ${full.length-count}개 펼치기</summary><div class="perk-grid perk-grid-extra">${full.slice(count).map(name=>`<span class="perk-chip perk-unranked perk-${perkType(name)}">${escapeHtml(name)}</span>`).join('')}</div></details></div>`;
+  return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${count}/13) · 드래그로 순서 변경 · 13위 아래는 순위 없음</span>
+    <div class="perk-order-editor" role="list" aria-label="특전 자동 선택 순서">${full.map((name,i)=>`<div class="perk-order-row ${i>=count?'perk-order-unranked':''} can-drag" draggable="true" data-drag-sort="perk" data-drag-index="${i}" role="listitem" title="드래그하여 순서 변경">
+      <span class="drag-grip" aria-hidden="true">⠿</span><span class="perk-order-rank">${i<count?String(i+1).padStart(2,'0'):'—'}</span>${perkChip(name)}
+      <span class="perk-order-actions"><button type="button" data-perk-move="${i}" data-direction="-1" ${i===0?'disabled':''} aria-label="${escapeHtml(name)} 위로">↑</button><button type="button" data-perk-move="${i}" data-direction="1" ${i===full.length-1?'disabled':''} aria-label="${escapeHtml(name)} 아래로">↓</button>${i<count?`<button type="button" data-perk-remove="${i}" aria-label="${escapeHtml(name)} 순위 제외">×</button>`:`<button type="button" data-perk-promote="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 13위 안에 편입">＋</button>`}</span>
+    </div>`).join('')}</div></div>`;
 }
 
 /* Equipment catalogs are grouped by reliably identified slot types. Existing custom names stay selectable. */
@@ -500,7 +550,7 @@ const MODULE_OPTIONS={
   slot3:['블소','펄서','갤압','하네스','임계값'],
   slot4:['멀티버스 넥서스','차코','하모니 도체','옴칩','원붕']
 };
-const EXTRA_MODULES=[...new Set(Object.values(window.TOWER_NAME_MAPS?.modules||{}))];
+// Each module selector is restricted to the correct equipment category.
 const GUARDIAN_OPTIONS=['현상금','공격','동맹','회수','소환','정찰'];
 const CARD_OPTIONS=[...new Set([...DEFAULTS.flatMap(p=>String(p.fields.cards||'').split(',').map(x=>x.trim()).filter(Boolean)),
   '대미지','공속','체력','체젠','범위','캐시','코인','저속오라','치확','적밸','방어','무료업','추옵','대포','치코',
@@ -509,7 +559,7 @@ function moduleParts(value){return String(value||'').split(/\s*\+\s*/).filter(Bo
 function equipModule(slot,pos,value){
   if(!['slot1','slot2','slot3','slot4'].includes(slot)|| ![0,1].includes(pos))return;
   const parts=moduleParts(current().fields[slot]);
-  const options=new Set([...MODULE_OPTIONS[slot],...EXTRA_MODULES,...parts]);
+  const options=new Set(MODULE_OPTIONS[slot]);
   if(value && !options.has(value))return;
   if(pos===1 && value && !parts[0]){toast('주 모듈을 먼저 선택해 주세요.');renderDetails();return;}
   parts[pos]=value;
@@ -518,16 +568,15 @@ function equipModule(slot,pos,value){
   persist();renderDetails();
 }
 function moduleOptions(slot,chosen){
-  const main=MODULE_OPTIONS[slot]||[];
-  const more=EXTRA_MODULES.filter(n=>!main.includes(n));
-  if(chosen && !main.includes(chosen)&&!more.includes(chosen))more.unshift(chosen);
+  const permitted=MODULE_OPTIONS[slot]||[];
   const option=(v)=>`<option value="${escapeHtml(v)}" ${v===chosen?'selected':''}>${escapeHtml(v)}</option>`;
-  return `<option value="">장착 안 함</option><optgroup label="해당 부위 추천">${main.map(option).join('')}</optgroup><optgroup label="기타 모듈">${more.map(option).join('')}</optgroup>`;
+  // A legacy invalid item is never silently replaced until the user makes a choice.
+  return `<option value="" ${!chosen||!permitted.includes(chosen)?'selected':''}>장착 안 함</option>${permitted.map(option).join('')}`;
 }
 function renderModules(key,label,value,editable){
   const parts=moduleParts(value);
-  return `<div class="setting-field equipment-field"><div class="equip-heading"><strong>${escapeHtml(label)} 모듈</strong><span>${parts.length?escapeHtml(parts.join(' + ')):'미장착'}</span></div>
-  ${editable?`<div class="equip-edit-row"><label>주 모듈<select data-module-slot="${key}" data-module-pos="0">${moduleOptions(key,parts[0]||'')}</select></label><label>보조 모듈<select data-module-slot="${key}" data-module-pos="1">${moduleOptions(key,parts[1]||'')}</select></label></div>`:`<div class="equip-display">${parts.length?parts.map((name,i)=>`<span class="equip-pill">${escapeHtml(name)}</span>`).join('<span class="equip-separator">+</span>'):'<span class="muted-caption">미장착</span>'}</div>`}</div>`;
+  return `<div class="setting-field equipment-field"><div class="equip-heading"><strong>${escapeHtml(label)} 모듈</strong></div>
+  ${editable?`<div class="equip-edit-row"><label>주 모듈<select data-module-slot="${key}" data-module-pos="0">${moduleOptions(key,parts[0]||'')}</select></label><label>보조 모듈<select data-module-slot="${key}" data-module-pos="1">${moduleOptions(key,parts[1]||'')}</select></label></div>`:`<div class="equip-display">${parts.length?parts.map(name=>`<span class="equip-pill">${escapeHtml(name)}</span>`).join('<span class="equip-separator">+</span>'):'<span class="muted-caption">미장착</span>'}</div>`}</div>`;
 }
 function guardianNames(value){return compactGuardian(value).split(/\s*\|\s*/).map(x=>x.trim()).filter(Boolean).slice(0,2);}
 function equipGuardian(slot,value){
@@ -782,7 +831,7 @@ function openHistory() {
     try {
       if (file.size > 1024 * 1024) throw new Error('파일이 너무 큽니다.');
       const parsed = JSON.parse(await file.text());
-      if (parsed.app !== 'the-tower-idle-preset-archive' || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(parsed.schemaVersion) || !Array.isArray(parsed.presets)) throw new Error('지원하지 않는 백업 파일입니다.');
+      if (parsed.app !== 'the-tower-idle-preset-archive' || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(parsed.schemaVersion) || !Array.isArray(parsed.presets)) throw new Error('지원하지 않는 백업 파일입니다.');
       // Accept five-preset backups from earlier versions; the new tournament is copied from Push_Trn_DS.
       if (!DEFAULTS.filter(p => p.id !== 'tournament').every(p => parsed.presets.some(x => x?.id === p.id && x.fields && typeof x.fields === 'object'))) throw new Error('기존 5개 프리셋을 포함한 백업이 아닙니다.');
       const hasTournament = parsed.presets.some(p => p?.id === 'tournament' && p.fields && typeof p.fields === 'object');
@@ -962,7 +1011,7 @@ function openHistory() {
   });
   $('settingGroups').addEventListener('click', event => {
     if (!editable) return;
-    const btn=event.target.closest('button[data-level-field],button[data-level-lock],button[data-bot-plus],button[data-bot-toggle],button[data-bot-stat],button[data-target-move],button[data-perk-ban],button[data-perk-move],button[data-perk-remove],button[data-perk-add],button[data-card-toggle],button[data-card-mastery]');
+    const btn=event.target.closest('button[data-level-field],button[data-level-lock],button[data-bot-plus],button[data-bot-toggle],button[data-bot-stat],button[data-target-move],button[data-perk-ban],button[data-perk-move],button[data-perk-remove],button[data-perk-add],button[data-perk-promote],button[data-card-toggle],button[data-card-mastery]');
     if (!btn) return;
     if (btn.hasAttribute('data-level-lock')) {
       toggleLevelLock(btn.dataset.levelLock,btn.dataset.statName);
@@ -986,9 +1035,44 @@ function openHistory() {
       movePerk(Number(btn.dataset.perkMove),Number(btn.dataset.direction));
     } else if (btn.hasAttribute('data-perk-remove')) {
       removePerk(Number(btn.dataset.perkRemove));
+    } else if (btn.hasAttribute('data-perk-promote')) {
+      addPerk(btn.dataset.perkPromote);
     } else if (btn.hasAttribute('data-perk-add')) {
       const select=$('perkAddSelect');if(select?.value)addPerk(select.value);
     }
+  });
+  // Mouse/trackpad drag sorting for targets and all perks (including unranked ones).
+  // Up/down controls remain as keyboard/touch fallbacks.
+  let sortingDrag=null;
+  $('settingGroups').addEventListener('dragstart',event=>{
+    if(!editable)return;
+    const row=event.target.closest('[data-drag-sort]');if(!row)return;
+    sortingDrag={type:row.dataset.dragSort,index:Number(row.dataset.dragIndex)};
+    row.classList.add('is-dragging');
+    event.dataTransfer.effectAllowed='move';
+    event.dataTransfer.setData('text/plain',row.dataset.dragSort+':'+row.dataset.dragIndex);
+  });
+  $('settingGroups').addEventListener('dragover',event=>{
+    const row=event.target.closest('[data-drag-sort]');
+    if(!sortingDrag||!row||row.dataset.dragSort!==sortingDrag.type)return;
+    event.preventDefault();event.dataTransfer.dropEffect='move';
+    document.querySelectorAll('.is-drag-over').forEach(x=>x.classList.remove('is-drag-over'));
+    row.classList.add('is-drag-over');
+  });
+  $('settingGroups').addEventListener('drop',event=>{
+    const row=event.target.closest('[data-drag-sort]');
+    if(!sortingDrag||!row||row.dataset.dragSort!==sortingDrag.type)return;
+    event.preventDefault();
+    const from=sortingDrag.index,to=Number(row.dataset.dragIndex),type=sortingDrag.type;
+    sortingDrag=null;
+    document.querySelectorAll('.is-drag-over,.is-dragging').forEach(x=>x.classList.remove('is-drag-over','is-dragging'));
+    if(from===to)return;
+    if(type==='perk')reorderPerk(from,to);
+    else if(type==='target')reorderTarget(from,to);
+  });
+  $('settingGroups').addEventListener('dragend',()=>{
+    sortingDrag=null;
+    document.querySelectorAll('.is-drag-over,.is-dragging').forEach(x=>x.classList.remove('is-drag-over','is-dragging'));
   });
   $('settingGroups').addEventListener('change',(event)=>{
     const field=event.target;
