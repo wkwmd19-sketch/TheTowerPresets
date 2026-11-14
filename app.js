@@ -339,6 +339,23 @@ const perkAliases=new Map(Object.entries(LEGACY_PERK_MAP).map(([id,name])=>[name
 function canonicalPerkName(name){return perkAliases.get(String(name).trim()) || String(name).trim();}
 const perkType=name=>{const k=Object.keys(PERK_MAP).find(id=>PERK_MAP[id]===name);return k==null?'unknown':Number(k)>=40?'tradeoff':Number(k)>=20?'ultimate':'standard';};
 const perkChip=(name)=>`<span class="perk-chip perk-${perkType(name)}">${escapeHtml(name)}</span>`;
+// Old JSON backups may contain banned perks in the top thirteen positions.
+// Move them behind all available perks once on load/import, and free their ranks.
+// This is idempotent for backups saved with the new layout.
+function normalizePerkRanking(p){
+  const banned=banNames(p.fields?.perks);
+  const bannedSet=new Set(banned);
+  const saved=fullPerkOrder(p.fields?.perkOrder);
+  const previousCount=Number.isInteger(p.perkRankCount)
+    ? Math.min(13,Math.max(0,p.perkRankCount))
+    : Math.min(13,parsedPerkLines(p.fields?.perkOrder).length);
+  const active=saved.filter(name=>!bannedSet.has(name));
+  const stillRanked=saved.slice(0,previousCount).filter(name=>!bannedSet.has(name));
+  p.perkRankCount=Math.min(13,stillRanked.length);
+  p.fields.perkOrder=[...active,...banned].map((name,i)=>`${String(i+1).padStart(2,'0')}. ${name}`).join('\n');
+}
+for(const preset of presets)normalizePerkRanking(preset);
+
 function parseWorkshop(value) {
   const found=new Map();
   for(const token of splitStats(value)) {
@@ -492,7 +509,11 @@ function rankCount(){
   if(Number.isInteger(value))return Math.min(13,Math.max(0,value));
   return Math.min(13,parsedPerkLines(current().fields.perkOrder).length);
 }
-function perkOrderNames(value){return fullPerkOrder(value).slice(0,rankCount());}
+function availablePerkOrder(value){
+  const banned=new Set(banNames(current().fields.perks));
+  return fullPerkOrder(value).filter(name=>!banned.has(name));
+}
+function perkOrderNames(value){return availablePerkOrder(value).slice(0,rankCount());}
 function writeBans(names){current().fields.perks=`금지 특전 (${names.length}개):\n`+names.map(name=>'• '+name).join('\n');}
 function togglePerkBan(name){
   if(!perkNames.includes(name))return;
@@ -500,33 +521,39 @@ function togglePerkBan(name){
   const index=selected.indexOf(name);
   if(index>=0)selected.splice(index,1);
   else {if(selected.length>=8){toast('금지 특전은 최대 8개까지만 선택할 수 있습니다.');return;}selected.push(name);}
-  writeBans(selected);persist();renderDetails();
+  writeBans(selected);
+  // A newly banned ranked perk forfeits its rank; unbanning only makes it available.
+  normalizePerkRanking(current());
+  persist();renderDetails();
 }
 function writePerkOrder(names,count=rankCount()){
-  const ordered=[...new Set(names)].filter(name=>perkNames.includes(name));
-  for(const name of perkNames)if(!ordered.includes(name))ordered.push(name);
-  current().perkRankCount=Math.min(13,Math.max(0,count));
-  current().fields.perkOrder=ordered.map((name,i)=>`${String(i+1).padStart(2,'0')}. ${name}`).join('\n');
+  const banned=banNames(current().fields.perks),bannedSet=new Set(banned);
+  const ordered=[...new Set(names)].filter(name=>perkNames.includes(name)&&!bannedSet.has(name));
+  for(const name of perkNames)if(!bannedSet.has(name)&&!ordered.includes(name))ordered.push(name);
+  const full=[...ordered,...banned];
+  current().perkRankCount=Math.min(13,ordered.length,Math.max(0,count));
+  current().fields.perkOrder=full.map((name,i)=>`${String(i+1).padStart(2,'0')}. ${name}`).join('\n');
 }
 function reorderPerk(from,to){
-  const full=fullPerkOrder(current().fields.perkOrder);
-  if(from<0||from>=full.length||to<0||to>=full.length||from===to)return;
-  const [moved]=full.splice(from,1);full.splice(to,0,moved);
-  writePerkOrder(full);persist();renderDetails();
+  // Drag indices refer only to eligible perks, never the banned section.
+  const available=availablePerkOrder(current().fields.perkOrder);
+  if(from<0||from>=available.length||to<0||to>=available.length||from===to)return;
+  const [moved]=available.splice(from,1);available.splice(to,0,moved);
+  writePerkOrder(available);persist();renderDetails();
 }
 function movePerk(index,dir){reorderPerk(index,index+dir);}
 function removePerk(index){
-  const full=fullPerkOrder(current().fields.perkOrder),count=rankCount();
+  const available=availablePerkOrder(current().fields.perkOrder),count=rankCount();
   if(index<0||index>=count)return;
-  const [removed]=full.splice(index,1);full.push(removed);
-  writePerkOrder(full,count-1);persist();renderDetails();
+  const [removed]=available.splice(index,1);available.push(removed);
+  writePerkOrder(available,count-1);persist();renderDetails();
 }
 function addPerk(name){
-  const full=fullPerkOrder(current().fields.perkOrder),count=rankCount();
-  if(!perkNames.includes(name))return;
-  const index=full.indexOf(name);if(index<0)return;
-  full.splice(index,1);full.splice(count>=13?12:count,0,name);
-  writePerkOrder(full,Math.min(13,count+1));persist();renderDetails();
+  if(!perkNames.includes(name)||banNames(current().fields.perks).includes(name))return;
+  const available=availablePerkOrder(current().fields.perkOrder),count=rankCount();
+  const index=available.indexOf(name);if(index<0)return;
+  available.splice(index,1);available.splice(count>=13?12:count,0,name);
+  writePerkOrder(available,Math.min(13,count+1));persist();renderDetails();
 }
 function renderPerkBans(value,editable){
   const selected=banNames(value),full=selected.length>=8;
@@ -534,13 +561,21 @@ function renderPerkBans(value,editable){
   return `<div class="setting-field perks-field"><span class="field-label">금지 특전 (${selected.length}/8)${editable&&full?' · 8개 선택 완료':''}</span><div class="perk-grid">${selected.map(badge).join('')}</div>${editable?`<details class="perk-edit-details" open><summary>금지 특전 선택 · 선택된 항목을 다시 누르면 해제</summary><div class="perk-toggle-grid">${perkNames.map(name=>{const chosen=selected.includes(name);return `<button type="button" class="perk-choice perk-${perkType(name)} ${chosen?'selected':''}" data-perk-ban="${escapeHtml(name)}" aria-pressed="${chosen}" ${full&&!chosen?'disabled title="8개 모두 지정됨 — 선택된 항목을 해제하세요"':''}><span class="perk-check">${chosen?'✓':'+'}</span>${escapeHtml(name)}</button>`}).join('')}</div></details>`:''}</div>`;
 }
 function renderPerkOrder(value,editable){
-  const full=fullPerkOrder(value),count=rankCount();
-  if(!editable)return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${count}/13) · 미지정 ${full.length-count}개</span><div class="perk-grid">${full.slice(0,count).map((name,i)=>`<span class="perk-chip perk-${perkType(name)}"><b>#${i+1}</b> ${escapeHtml(name)}</span>`).join('')}</div><details class="perk-order-details"><summary>순위 미지정 특전 ${full.length-count}개 펼치기</summary><div class="perk-grid perk-grid-extra">${full.slice(count).map(name=>`<span class="perk-chip perk-unranked perk-${perkType(name)}">${escapeHtml(name)}</span>`).join('')}</div></details></div>`;
-  return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${count}/13) · 드래그로 순서 변경 · 13위 아래는 순위 없음</span>
-    <div class="perk-order-editor" role="list" aria-label="특전 자동 선택 순서">${full.map((name,i)=>`<div class="perk-order-row ${i>=count?'perk-order-unranked':''} can-drag" draggable="true" data-drag-sort="perk" data-drag-index="${i}" role="listitem" title="드래그하여 순서 변경">
+  const available=availablePerkOrder(value),banned=banNames(current().fields.perks);
+  const count=Math.min(rankCount(),available.length),unranked=available.slice(count);
+  // Banned perks stay visible at the bottom but have no rank, drag handle or promote button.
+  const bannedSection=banned.length?`<div class="perk-order-banned" aria-label="순위 제외된 금지 특전">
+    <div class="perk-order-banned-title">🔒 금지 특전 · 순위 제외 (${banned.length})</div>
+    <div class="perk-order-banned-list">${banned.map(name=>editable?
+      `<button type="button" class="perk-order-banned-chip" data-perk-ban="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 금지 해제"><span>금지</span>${escapeHtml(name)} <b>× 해제</b></button>`:
+      `<span class="perk-order-banned-chip"><span>금지</span>${escapeHtml(name)}</span>`).join('')}</div>
+  </div>`:'';
+  if(!editable)return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${count}/13) · 미지정 ${unranked.length}개</span><div class="perk-grid">${available.slice(0,count).map((name,i)=>`<span class="perk-chip perk-${perkType(name)}"><b>#${i+1}</b> ${escapeHtml(name)}</span>`).join('')}</div>${unranked.length?`<details class="perk-order-details"><summary>순위 미지정 특전 ${unranked.length}개 펼치기</summary><div class="perk-grid perk-grid-extra">${unranked.map(name=>`<span class="perk-chip perk-unranked perk-${perkType(name)}">${escapeHtml(name)}</span>`).join('')}</div></details>`:''}${bannedSection}</div>`;
+  return `<div class="setting-field perks-field"><span class="field-label">자동 선택 순서 (${count}/13) · 드래그로 순서 변경 · 금지 특전은 맨 아래로 분리</span>
+    <div class="perk-order-editor" role="list" aria-label="특전 자동 선택 순서">${available.map((name,i)=>`<div class="perk-order-row ${i>=count?'perk-order-unranked':''} can-drag" draggable="true" data-drag-sort="perk" data-drag-index="${i}" role="listitem" title="드래그하여 순서 변경">
       <span class="drag-grip" aria-hidden="true">⠿</span><span class="perk-order-rank">${i<count?String(i+1).padStart(2,'0'):'—'}</span>${perkChip(name)}
-      <span class="perk-order-actions"><button type="button" data-perk-move="${i}" data-direction="-1" ${i===0?'disabled':''} aria-label="${escapeHtml(name)} 위로">↑</button><button type="button" data-perk-move="${i}" data-direction="1" ${i===full.length-1?'disabled':''} aria-label="${escapeHtml(name)} 아래로">↓</button>${i<count?`<button type="button" data-perk-remove="${i}" aria-label="${escapeHtml(name)} 순위 제외">×</button>`:`<button type="button" data-perk-promote="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 13위 안에 편입">＋</button>`}</span>
-    </div>`).join('')}</div></div>`;
+      <span class="perk-order-actions"><button type="button" data-perk-move="${i}" data-direction="-1" ${i===0?'disabled':''} aria-label="${escapeHtml(name)} 위로">↑</button><button type="button" data-perk-move="${i}" data-direction="1" ${i===available.length-1?'disabled':''} aria-label="${escapeHtml(name)} 아래로">↓</button>${i<count?`<button type="button" data-perk-remove="${i}" aria-label="${escapeHtml(name)} 순위 제외">×</button>`:`<button type="button" data-perk-promote="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 13위 안에 편입">＋</button>`}</span>
+    </div>`).join('')}</div>${bannedSection}</div>`;
 }
 
 /* Equipment catalogs are grouped by reliably identified slot types. Existing custom names stay selectable. */
@@ -842,7 +877,7 @@ function openHistory() {
       if (!DEFAULTS.filter(p => p.id !== 'tournament').every(p => parsed.presets.some(x => x?.id === p.id && x.fields && typeof x.fields === 'object'))) throw new Error('기존 5개 프리셋을 포함한 백업이 아닙니다.');
       const hasTournament = parsed.presets.some(p => p?.id === 'tournament' && p.fields && typeof p.fields === 'object');
       if (!confirm(hasTournament ? '현재 브라우저에 저장된 6개 프리셋을 백업 파일 내용으로 바꾸시겠습니까?' : '기존 5개 프리셋을 복원하고, 새 토너 프리셋은 토너·등반·방어런 설정을 복사해 만들까요?')) return;
-      presets = normalize(parsed); active = 'farm'; activeView = 'preset'; editable = false; editSnapshot = null; historyEditing = false;
+      presets = normalize(parsed); presets.forEach(normalizePerkRanking); active = 'farm'; activeView = 'preset'; editable = false; editSnapshot = null; historyEditing = false;
       initializeComponentSources(parsed);
       if (Array.isArray(parsed.waves) && parsed.waves.length === 24) waveRows = parsed.waves;
       if (Array.isArray(parsed.masteredCards)) masteredCards=parsed.masteredCards.filter(x=>typeof x==='string');
